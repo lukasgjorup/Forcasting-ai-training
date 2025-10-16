@@ -1,0 +1,17 @@
+
+[project]
+name = "Forcasting-ai-training"
+version = "0.1.0"
+description = "TensorFlow LSTM models training repo"
+authors = [{ name = "Mikkel D. Albertsen", email = "mikkel.skagen@gmail.com" }]
+requires-python = ">=3.11,<3.12"
+
+dependencies = [
+  "tensorflow[and-cuda]==2.20.0",
+  "numpy>=2.0",
+  "pandas>=2.2.2",
+  "h5py>=3.13",
+]
+
+[tool.uv]
+default-group = "main"
