@@ -31,9 +31,13 @@ def read_training_data(
     pandas.DataFrame
         a pandas dataframe of the files
     """
-    csv_dataframe = pd.DataFrame(pd.read_csv(os.path.join(directory_path, file_pattern.format(0))))
+    csv_dataframe = pd.DataFrame(
+        pd.read_csv(os.path.join(directory_path, file_pattern.format(0)))
+    )
     for i in range(start_index + 1, end_index):
-        data = pd.read_csv(pd.read_csv(os.path.join(directory_path, file_pattern.format(i))))
+        data = pd.read_csv(
+            pd.read_csv(os.path.join(directory_path, file_pattern.format(i)))
+        )
         dataframe = pd.DataFrame(data)
         csv_dataframe = pd.concat([csv_dataframe, dataframe], axis=0)
     return csv_dataframe
@@ -82,13 +86,19 @@ def append_weather_data(
             f"Progress: {100 * (i / len(dataframe)):.2f}% time elapsed: "
             + str(datetime.timedelta(seconds=time.time() - start))
             + " estimated time left: "
-            + str(datetime.timedelta(seconds=(((time.time() - start) / (i + 0.1)) * (len(dataframe) - i)))),
+            + str(
+                datetime.timedelta(
+                    seconds=(((time.time() - start) / (i + 0.1)) * (len(dataframe) - i))
+                )
+            ),
             end="\r",
         )
         abridged_df[datetime_col] = pd.to_datetime(abridged_df[datetime_col])
         if os.path.exists(weather_csv):
             match = weather_df.loc[
-                weather_df[weather_time_col].str.contains(str(abridged_df.loc[i, datetime_col])),
+                weather_df[weather_time_col].str.contains(
+                    str(abridged_df.loc[i, datetime_col])
+                ),
                 weather_data,
             ]
             if not match.empty:
@@ -96,7 +106,10 @@ def append_weather_data(
             else:
                 match = weather_df.loc[
                     weather_df[weather_time_col].str.contains(
-                        str(abridged_df.loc[i, datetime_col] + datetime.timedelta(minutes=30))
+                        str(
+                            abridged_df.loc[i, datetime_col]
+                            + datetime.timedelta(minutes=30)
+                        )
                     ),
                     weather_data,
                 ]
@@ -122,7 +135,7 @@ def init_data(
     data_cols=["LCLid", "tstp", "energy(kWh/hh)"],
     data_cols_out=["LCLid", "datetime", "energy(kWh/hh)"],
     datetime_col="datetime",
-    weather_data=["temperature", "humidity"],
+    weather_data=["temperature"],
     weather_time_col="time",
 ):
     """Initalizes the dataset
@@ -177,7 +190,6 @@ def init_data(
             weather_data,
             weather_time_col,
         )
-        print(df)
         df.to_csv(formatted_csv, index=False)
     else:
         print("initializing from data from " + formatted_csv)
