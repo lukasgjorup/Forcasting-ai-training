@@ -12,6 +12,7 @@ def test_initialize_training_data():
         formatted_csv="formatted_data.csv",
         weather_dataset_path="weather_hourly_darksky.csv",
         force_rebuild_data=True,
+            weather_data=["temperature", "humidity"],
     )
     verified_data = pd.read_csv("data/test/formatted_data.csv")
     verified_data["datetime"] = pd.to_datetime(verified_data["datetime"])
