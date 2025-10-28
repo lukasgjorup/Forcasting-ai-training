@@ -11,7 +11,13 @@ dependencies = [
   "numpy>=2.0",
   "pandas>=2.2.2",
   "h5py>=3.13",
+  "pytest>=8.0",
 ]
 
 [tool.uv]
 default-group = "main"
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "."
+]
