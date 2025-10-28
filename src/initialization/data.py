@@ -118,6 +118,7 @@ def append_weather_data(
 
             if data_point_cnt >= data_points:
                 abridged_df.drop(index=abridged_df.iloc[i].name, inplace=True)
+                abridged_df.reset_index(drop=True, inplace=True)
                 continue
 
         abridged_df[datetime_col] = pd.to_datetime(abridged_df[datetime_col])
@@ -148,6 +149,7 @@ def append_weather_data(
                             weather_df.loc[weather_data[i]]
                         )  # for some reason there's a couple missing days in the weather data
         i = i + 1
+        data_point_cnt = data_point_cnt + 1
     return abridged_df
 
 
