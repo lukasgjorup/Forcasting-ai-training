@@ -89,17 +89,19 @@ model.save("lstm_energy_model.keras")
 
 
 # 6️⃣ Predict per household
-def predict_house(house_key):
+def predict_house(house,scaler):
     print("Predicting")
-    data = households[house_key]  # Select household data
-    print(data)
-    X_seq, y_seq = create_sequences(data)  # Create sequences
+    #data = house[]  # Select household data
+    #print(data)
+    X_seq,y_seq = stackHouseholds(house) # Create sequences
     print(X_seq, "X")
     print(y_seq, "y")
     pred_scaled = model.predict(X_seq)  # Predict on normalized data
     # Convert back to real-world values
-    y_real = scalers['energy(kWh/hh)'].inverse_transform(y_seq.reshape(-1, 1))
-    pred_real = scalers['energy(kWh/hh)'].inverse_transform(pred_scaled)
+    y_real = scaler['energy(kWh/hh)'].inverse_transform(y_seq.reshape(-1, 1))
+    print(pred_scaled, "pred_scaled")
+    pred_last = pred_scaled[:, -1, :]
+    pred_real = scaler['energy(kWh/hh)'].inverse_transform(pred_last)
     print(pred_real, "x_pred")
     print(y_real, "y real")
 
@@ -107,22 +109,28 @@ def predict_house(house_key):
     plt.figure(figsize=(10, 5))
     plt.plot(y_real, label='True')  # True energy values
     plt.plot(pred_real, label='Predicted')  # Predicted energy values
-    plt.title(f"Energy Prediction - {house_key}")
+    plt.title(f"Energy Prediction")
     plt.xlabel('Timestep')
     plt.ylabel('Energy (kWh/hh)')
     plt.legend()
     plt.show()
 
 
-testHouseholds = LoadAndProcessCSV("../../prediction_Data.csv")
-with open("scalers.pkl", "rb") as f:
-    scaler = pickle.load(f)
+def predictHousehold(dataPath = "../../prediction_Data.csv",scalerPath = "scalers.pkl"):
+    testHouseholds = LoadAndProcessCSV(dataPath)
+    with open(scalerPath, "rb") as f:
+        scalers = pickle.load(f)
 
-for i, col_name in enumerate(numeric_cols):
-    for key in testHouseholds:
-        # Transform each household's data for this feature
-        testHouseholds[key][:, i] = scaler[col_name].transform(testHouseholds[key][:, i].reshape(-1, 1)).flatten()
+    for idx, (house_id, arr) in enumerate(testHouseholds.items()):
+        if idx > 0:
+            print("WARNING! User has sent more than one household")
 
+        # Scale both columns
+        arr[:, 0] = scalers['energy(kWh/hh)'].transform(arr[:, 0].reshape(-1, 1)).flatten()
+        arr[:, 1] = scalers['temperature'].transform(arr[:, 1].reshape(-1, 1)).flatten()
 
-predict_house(list(testHouseholds.keys())[0])  # Predict for the first household
+    print(list(testHouseholds.keys()))
 
+    predict_house(testHouseholds,scalers)  # Predict for the first household
+
+predictHousehold()
