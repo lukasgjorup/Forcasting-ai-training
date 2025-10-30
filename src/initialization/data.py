@@ -88,6 +88,7 @@ def append_weather_data(
     current_id = ""
     data_point_cnt = 0
     i = 0
+    idx = 0
     if id_col == "":
         current_id = abridged_df.loc[0, data_cols_out[0]]
     else:
@@ -95,13 +96,14 @@ def append_weather_data(
     if os.path.exists(weather_csv):
         weather_df = pd.read_csv(weather_csv)
     while i < len(abridged_df):
+        idx += 1
         print(
-            f"Progress: {100 * (i / len(dataframe)):.2f}% time elapsed: "
+            f"Progress: {100 * (idx / len(dataframe)):.2f}% time elapsed: "
             + str(datetime.timedelta(seconds=time.time() - start))
             + " estimated time left: "
             + str(
                 datetime.timedelta(
-                    seconds=(((time.time() - start) / (i + 0.1)) * (len(dataframe) - i))
+                    seconds=(((time.time() - start) / (idx + 0.1)) * (len(dataframe) - idx))
                 )
             ),
             end="\r",
