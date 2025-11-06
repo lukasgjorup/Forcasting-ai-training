@@ -1,114 +1,82 @@
-import pandas as pd  # For reading CSVs and handling tabular data
-import numpy as np  # For numerical operations and arrays
-from tensorflow.keras.models import Sequential  # To create a sequential neural network
-from tensorflow.keras.layers import LSTM, Dense  # LSTM for sequences, Dense for output layer
-from sklearn.preprocessing import MinMaxScaler  # For normalizing feature values
-import matplotlib.pyplot as plt  # For plotting predictions vs true values
-from tensorflow.keras.layers import Dropout
+import pandas as pd
+import numpy as np
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+from sklearn.preprocessing import MinMaxScaler
+import matplotlib.pyplot as plt
 import pickle
 
 numeric_cols = ['energy(kWh/hh)', 'temperature']
 
 
+# 1️⃣ Load and process CSV
 def LoadAndProcessCSV(path="../../formatted_data.csv"):
-    df = pd.read_csv(path)  # Load the CSV into a Pandas DataFrame
-    print(df.columns.tolist())  # Print column names to verify they are correct
-  # Columns we care about for model
-    df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce')  # Convert to numeric, invalid values become NaN
-    df.dropna(subset=numeric_cols, inplace=True)  # Drop rows with missing values in these columns
+    df = pd.read_csv(path)
+    print(df.columns.tolist())
+    df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce')
+    df.dropna(subset=numeric_cols, inplace=True)
 
-    # 2️⃣ Group by household
-    households = {}  # Dictionary to store data for each household
-    for house_id, group in df.groupby('LCLid'):  # Group data by household ID
-        group = group.sort_values('datetime')  # Sort each household's data chronologically
-        households[house_id] = group[numeric_cols].values  # Save the numeric values as a NumPy array
+    households = {}
+    for house_id, group in df.groupby('LCLid'):
+        group = group.sort_values('datetime')
+        households[house_id] = group[numeric_cols].values
     return households
 
 
-households = LoadAndProcessCSV("../../formatted_data_100.csv")
-
+# 2️⃣ Normalize data
 def makeScalerAndNormalizeData(households):
-    # 3️⃣ Normalize features
-    scalers = {}  # Store one scaler per feature
+    scalers = {}
     for i, col in enumerate(numeric_cols):
-        # Combine all values of this feature across all households for consistent scaling
         all_values = np.concatenate([house[:, i] for house in households.values()]).reshape(-1, 1)
-        scaler = MinMaxScaler(feature_range=(0, 1))  # Scale between 0 and 1
-        scaler.fit(all_values)  # Fit scaler on all data for this feature
-        scalers[col] = scaler  # Store the scaler
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        scaler.fit(all_values)
+        scalers[col] = scaler
         for key in households:
-            # Transform each household's data for this feature
             households[key][:, i] = scaler.transform(households[key][:, i].reshape(-1, 1)).flatten()
     with open("scalers.pkl", "wb") as f:
         pickle.dump(scalers, f)
     return households, scalers
 
-households,scalers = makeScalerAndNormalizeData(households)
 
-
-# 4️⃣ Create sequences
-timesteps = 24  # Use past 24 timesteps (e.g., hours) to predict next energy
-features = len(numeric_cols)  # Number of input features (energy, temp, humidity)
+# 3️⃣ Create sequences
+timesteps = 24
+features = len(numeric_cols)
 
 
 def create_sequences(data):
-    x, y = [], []  # Initialize input/output arrays
+    x, y = [], []
     for i in range(len(data) - timesteps):
-        x.append(data[i:i + timesteps])  # Sequence of past timesteps
-        y.append(data[i + timesteps, 0])  # Target is the next energy value (first column)
-    return np.array(x), np.array(y)  # Convert lists to NumPy arrays
+        x.append(data[i:i + timesteps])
+        y.append(data[i + timesteps, 0])  # Predict next energy
+    return np.array(x), np.array(y)
 
+
+# 4️⃣ Stack multiple households into one dataset
 def stackHouseholds(localHouseholds):
-
-    all_X, all_y = [], []  # Collect sequences for all households
+    all_X, all_y = [], []
     for key in localHouseholds:
-        X_house, y_house = create_sequences(localHouseholds[key])  # Generate sequences
-        all_X.append(X_house)  # Add to input list
-        all_y.append(y_house)  # Add to output list
-
-    z = np.vstack(all_X)  # Stack all households' sequences together
-    p = np.concatenate(all_y)  # Combine all targets
-    print("X shape:", z.shape, "y shape:", p.shape)  # Print shapes for verification
+        X_house, y_house = create_sequences(localHouseholds[key])
+        all_X.append(X_house)
+        all_y.append(y_house)
+    z = np.vstack(all_X)
+    p = np.concatenate(all_y)
+    print("X shape:", z.shape, "y shape:", p.shape)
     return z, p
 
-X,Y = stackHouseholds(households)
 
-# 5️⃣ Build & train LSTM
-model = Sequential([
-    LSTM(64, return_sequences=True, input_shape=(timesteps, features)),
-    Dropout(0.2),
-    LSTM(32, return_sequences=False),
-    Dropout(0.2),
-    Dense(1)
-])
-
-model.compile(optimizer='adam', loss='mse')  # Compile with Adam optimizer and MSE loss
-model.fit(X, Y, epochs=25, batch_size=32, validation_split=0.2)  # Train model
-
-model.save("lstm_energy_model.keras")
-
-
-# 6️⃣ Predict per household
-def predict_house(house,scaler):
-    print("Predicting")
-    #data = house[]  # Select household data
-    #print(data)
+# 5️⃣ Prediction for one household
+def predict_house(house, scaler, model):
+    print("Predicting...")
     first_key = list(house.keys())[0]
     X_seq, y_seq = create_sequences(house[first_key])
 
-    pred_scaled = model.predict(X_seq)  # Predict on normalized data
-    # Convert back to real-world values
+    pred_scaled = model.predict(X_seq)
     y_real = scaler['energy(kWh/hh)'].inverse_transform(y_seq.reshape(-1, 1))
-    print(pred_scaled, "pred_scaled")
-    #pred_last = pred_scaled[:, -1, :]
     pred_real = scaler['energy(kWh/hh)'].inverse_transform(pred_scaled)
-    print(pred_real, "x_pred")
-    print(y_real, "y real")
 
-    # Plot results
     plt.figure(figsize=(10, 5))
-    plt.plot(y_real, label='True')  # True energy values
-    plt.plot(pred_real, label='Predicted')  # Predicted energy values
+    plt.plot(y_real, label='True')
+    plt.plot(pred_real, label='Predicted')
     plt.title(f"Energy Prediction")
     plt.xlabel('Timestep')
     plt.ylabel('Energy (kWh/hh)')
@@ -116,21 +84,42 @@ def predict_house(house,scaler):
     plt.show()
 
 
-def predictHousehold(dataPath = "../../prediction_Data.csv",scalerPath = "scalers.pkl"):
+# 6️⃣ Predict household wrapper
+def predictHousehold(dataPath="../../prediction_Data.csv", scalerPath="scalers.pkl", modelPath="lstm_energy_model.keras"):
     testHouseholds = LoadAndProcessCSV(dataPath)
     with open(scalerPath, "rb") as f:
         scalers = pickle.load(f)
 
     for idx, (house_id, arr) in enumerate(testHouseholds.items()):
         if idx > 0:
-            print("WARNING! User has sent more than one household")
-
-        # Scale both columns
+            print("WARNING! Multiple households detected, using only the first one.")
         arr[:, 0] = scalers['energy(kWh/hh)'].transform(arr[:, 0].reshape(-1, 1)).flatten()
         arr[:, 1] = scalers['temperature'].transform(arr[:, 1].reshape(-1, 1)).flatten()
 
-    print(list(testHouseholds.keys()))
+    from tensorflow.keras.models import load_model
+    model = load_model(modelPath)
+    predict_house(testHouseholds, scalers, model)
 
-    predict_house(testHouseholds,scalers)  # Predict for the first household
 
-predictHousehold()
+# ✅ 7️⃣ Main block — only runs if executed directly
+if __name__ == "__main__":
+    print("Starting LSTM energy model training...")
+
+    households = LoadAndProcessCSV("../../formatted_data_100.csv")
+    households, scalers = makeScalerAndNormalizeData(households)
+    X, Y = stackHouseholds(households)
+
+    model = Sequential([
+        LSTM(64, return_sequences=True, input_shape=(timesteps, features)),
+        Dropout(0.2),
+        LSTM(32, return_sequences=False),
+        Dropout(0.2),
+        Dense(1)
+    ])
+
+    model.compile(optimizer='adam', loss='mse')
+    model.fit(X, Y, epochs=25, batch_size=32, validation_split=0.2)
+    model.save("lstm_energy_model.keras")
+
+    print("✅ Training finished, running test prediction...")
+    predictHousehold()
