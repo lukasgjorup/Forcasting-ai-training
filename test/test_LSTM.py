@@ -24,7 +24,7 @@ def make_fake_csv(tmp_path):
        """
     data = {
         "LCLid": ["A"] * 50 + ["B"] * 50,
-        "datetime": pd.date_range("2023-01-01", periods=100, freq="H"),
+        "datetime": pd.date_range("2023-01-01", periods=100, freq="h"),
         "energy(kWh/hh)": np.linspace(1, 100, 100),
         "temperature": np.linspace(10, 20, 100),
     }
