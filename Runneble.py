@@ -8,9 +8,9 @@ data.init_data(
     end_index=1,
     formatted_csv="formatted_data.csv",
     weather_dataset_path="weather_hourly_darksky.csv",
+    force_rebuild_data=True,
     data_cols=["LCLid", "tstp", "energy(kWh/hh)"],
     data_cols_out=["LCLid", "datetime", "energy(kWh/hh)"],
-    force_rebuild_data=True,
-    data_points = 10000
+    data_points = 200
 
 )

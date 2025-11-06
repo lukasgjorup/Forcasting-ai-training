@@ -25,7 +25,7 @@ def LoadAndProcessCSV(path="../../formatted_data.csv"):
     return households
 
 
-households = LoadAndProcessCSV()
+households = LoadAndProcessCSV("../../formatted_data_100.csv")
 
 def makeScalerAndNormalizeData(households):
     # 3️⃣ Normalize features
@@ -77,13 +77,13 @@ X,Y = stackHouseholds(households)
 model = Sequential([
     LSTM(64, return_sequences=True, input_shape=(timesteps, features)),
     Dropout(0.2),
-    LSTM(32,return_sequences=True),
+    LSTM(32, return_sequences=False),
     Dropout(0.2),
     Dense(1)
 ])
 
 model.compile(optimizer='adam', loss='mse')  # Compile with Adam optimizer and MSE loss
-model.fit(X, Y, epochs=10, batch_size=32, validation_split=0.2)  # Train model
+model.fit(X, Y, epochs=25, batch_size=32, validation_split=0.2)  # Train model
 
 model.save("lstm_energy_model.keras")
 
@@ -93,15 +93,15 @@ def predict_house(house,scaler):
     print("Predicting")
     #data = house[]  # Select household data
     #print(data)
-    X_seq,y_seq = stackHouseholds(house) # Create sequences
-    print(X_seq, "X")
-    print(y_seq, "y")
+    first_key = list(house.keys())[0]
+    X_seq, y_seq = create_sequences(house[first_key])
+
     pred_scaled = model.predict(X_seq)  # Predict on normalized data
     # Convert back to real-world values
     y_real = scaler['energy(kWh/hh)'].inverse_transform(y_seq.reshape(-1, 1))
     print(pred_scaled, "pred_scaled")
-    pred_last = pred_scaled[:, -1, :]
-    pred_real = scaler['energy(kWh/hh)'].inverse_transform(pred_last)
+    #pred_last = pred_scaled[:, -1, :]
+    pred_real = scaler['energy(kWh/hh)'].inverse_transform(pred_scaled)
     print(pred_real, "x_pred")
     print(y_real, "y real")
 
