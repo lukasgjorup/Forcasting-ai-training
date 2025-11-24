@@ -1,3 +1,5 @@
+import random
+
 import pandas as pd
 import numpy as np
 from tensorflow.keras.models import Sequential
@@ -127,107 +129,117 @@ def predictHousehold(
     with open(scalerPath, "rb") as f:
         scalers = pickle.load(f)
 
-    # Normalize each household with saved scalers
-    for i, (house_id, arr) in enumerate(testHouseholds.items()):
-        if i > 0:
-            print("WARNING: multiple households detected, using only the first one.")
-
-        arr[:, 0] = scalers['energy(kWh/hh)'].transform(arr[:, 0].reshape(-1, 1)).flatten()
-        arr[:, 1] = scalers['temperature'].transform(arr[:, 1].reshape(-1, 1)).flatten()
-
     from tensorflow.keras.models import load_model
     model = load_model(modelPath)
 
-    first_key = list(testHouseholds.keys())[0]
-    data = testHouseholds[first_key]
 
-    evaluate_recursive_prediction(data, scalers, model, steps=12)
+
+    evaluate_recursive_prediction(testHouseholds, scalers, model, steps=12)
 
 import math
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
-def evaluate_recursive_prediction(data, scalers, model, steps=12):
-    """
-    Evaluates model by recursively predicting next N timesteps
-    and comparing to ground truth.
-    """
 
-    if len(data) < timesteps + steps:
-        raise ValueError(f"Not enough data to evaluate {steps} steps ahead.")
+def evaluate_recursive_prediction(data_dict, scalers, model, timesteps=24, steps=12):
+    results = {}
 
-    # Split last window + true label sequence
-    input_window = data[-(timesteps + steps):-steps]   # 24 inputs
-    true_future = data[-steps:]                        # next 12 true labels
+    for house_name, data in data_dict.items():
+        if len(data) < timesteps + steps:
+            print(f"Skipping {house_name}: not enough data.")
+            continue
 
-    # Normalize input window
-    window_scaled = input_window.copy()
-    window_scaled[:, 0] = scalers['energy(kWh/hh)'].transform(window_scaled[:, 0].reshape(-1, 1)).flatten()
-    window_scaled[:, 1] = scalers['temperature'].transform(window_scaled[:, 1].reshape(-1, 1)).flatten()
+        # ---- 1) Build windows ----
+        X, Y = [], []
+        for i in range(len(data) - (timesteps + steps) + 1):
+            X.append(data[i:i + timesteps])
+            Y.append(data[i + timesteps:i + timesteps + steps])
+        X = np.array(X)
+        Y = np.array(Y)
+        num_windows = len(X)
 
-    predictions_scaled = []
+        # ---- 2) Normalize X ----
+        X_scaled = np.zeros_like(X)
+        for w in range(num_windows):
+            win = X[w].copy()
+            win[:, 0] = scalers['energy(kWh/hh)'].transform(win[:, 0].reshape(-1, 1)).flatten()
+            win[:, 1] = scalers['temperature'].transform(win[:, 1].reshape(-1, 1)).flatten()
+            X_scaled[w] = win
 
-    # Recursive forecasting
-    window = window_scaled.copy()
+        # ---- 3) Recursive predictions ----
+        preds_scaled = np.zeros((num_windows, steps, X.shape[2]))
+        for w in range(num_windows):
+            window = X_scaled[w].copy()
+            for s in range(steps):
+                X_input = window.reshape(1, timesteps, X.shape[2])
+                pred = model.predict(X_input, verbose=0)[0]
+                preds_scaled[w, s] = pred
+                window = np.vstack([window[1:], pred])
 
-    for i in range(steps):
-        X = window.reshape(1, timesteps, len(numeric_cols))
-        pred_scaled = model.predict(X)[0]  # [energy, temp]
+        # ---- 4) Inverse transform predictions ----
+        preds = np.zeros_like(preds_scaled)
+        for w in range(num_windows):
+            preds[w, :, 0] = scalers['energy(kWh/hh)'].inverse_transform(
+                preds_scaled[w, :, 0].reshape(-1, 1)
+            ).flatten()
+            preds[w, :, 1] = scalers['temperature'].inverse_transform(
+                preds_scaled[w, :, 1].reshape(-1, 1)
+            ).flatten()
 
-        predictions_scaled.append(pred_scaled)
+        # ---- 5) Compute metrics ----
+        true = Y.copy()
+        mae_energy, rmse_energy = [], []
+        mae_temp, rmse_temp = [], []
 
-        # shift window
-        window = np.vstack([window[1:], pred_scaled])
+        for w in range(num_windows):
+            e_true, e_pred = true[w, :, 0], preds[w, :, 0]
+            t_true, t_pred = true[w, :, 1], preds[w, :, 1]
 
-    predictions_scaled = np.array(predictions_scaled)
+            mae_energy.append(mean_absolute_error(e_true, e_pred))
+            rmse_energy.append(math.sqrt(mean_squared_error(e_true, e_pred)))
 
-    # Inverse-transform predictions
-    pred_energy = scalers['energy(kWh/hh)'].inverse_transform(predictions_scaled[:, 0].reshape(-1, 1)).flatten()
-    pred_temp   = scalers['temperature'].inverse_transform(predictions_scaled[:, 1].reshape(-1, 1)).flatten()
+            mae_temp.append(mean_absolute_error(t_true, t_pred))
+            rmse_temp.append(math.sqrt(mean_squared_error(t_true, t_pred)))
 
-    # Extract real targets
-    true_energy = true_future[:, 0]
-    true_temp   = true_future[:, 1]
+        # ---- 6) Store results ----
+        results[house_name] = {
+            "predictions": preds,
+            "true": true,
+            "mae_energy": np.mean(mae_energy),
+            "rmse_energy": np.mean(rmse_energy),
+            "mae_temp": np.mean(mae_temp),
+            "rmse_temp": np.mean(rmse_temp)
+        }
 
-    # Compute errors
-    mae_energy = mean_absolute_error(true_energy, pred_energy)
-    rmse_energy = math.sqrt(mean_squared_error(true_energy, pred_energy))
+        # ---- 7) Plot ONLY last window ----
 
-    mae_temp = mean_absolute_error(true_temp, pred_temp)
-    rmse_temp = math.sqrt(mean_squared_error(true_temp, pred_temp))
+        last_w = random.randint(0, num_windows-1)
+        plt.figure(figsize=(10, 4))
+        plt.plot(true[last_w, :, 0], label="True Energy")
+        plt.plot(preds[last_w, :, 0], label="Pred Energy")
+        plt.title(f"{house_name} — Energy (Last Window)")
+        plt.legend()
+        plt.show()
 
-    print("\n📊 Recursive Forecast Evaluation")
-    print("--------------------------------")
-    print(f"Energy   MAE:  {mae_energy:.4f}")
-    print(f"Energy   RMSE: {rmse_energy:.4f}")
-    print(f"Temp     MAE:  {mae_temp:.4f}")
-    print(f"Temp     RMSE: {rmse_temp:.4f}")
+        plt.figure(figsize=(10, 4))
+        plt.plot(true[last_w, :, 1], label="True Temp")
+        plt.plot(preds[last_w, :, 1], label="Pred Temp")
+        plt.title(f"{house_name} — Temperature (Last Window)")
+        plt.legend()
+        plt.show()
 
-    # Plot energy
-    plt.figure(figsize=(10, 4))
-    plt.plot(true_energy, label="True Energy")
-    plt.plot(pred_energy, label="Predicted Energy")
-    plt.title("12-Step Recursive Prediction — Energy")
-    plt.xlabel("Timestep")
-    plt.ylabel("kWh/hh")
-    plt.legend()
-    plt.show()
-
-    # Plot temperature
-    plt.figure(figsize=(10, 4))
-    plt.plot(true_temp, label="True Temperature")
-    plt.plot(pred_temp, label="Predicted Temperature")
-    plt.title("12-Step Recursive Prediction — Temperature")
-    plt.xlabel("Timestep")
-    plt.ylabel("°C")
-    plt.legend()
-    plt.show()
+        print(f"\n📊 {house_name} — Recursive Forecast Metrics")
+        print("----------------------------------------")
+        print(f"Energy MAE: {results[house_name]['mae_energy']:.4f}")
+        print(f"Energy RMSE: {results[house_name]['rmse_energy']:.4f}")
+        print(f"Temp   MAE: {results[house_name]['mae_temp']:.4f}")
+        print(f"Temp   RMSE: {results[house_name]['rmse_temp']:.4f}")
 
 
 # 7️⃣ Main training script
 if __name__ == "__main__":
     print("Starting dual-output LSTM training...")
 
-    households = LoadAndProcessCSV("../../formatted_data_100.csv")
+    households = LoadAndProcessCSV("../../formatted_data_1200.csv")
     households, scalers = makeScalerAndNormalizeData(households)
 
     X, Y = stackHouseholds(households)
@@ -237,11 +249,11 @@ if __name__ == "__main__":
         Dropout(0.2),
         LSTM(32),
         Dropout(0.2),
-        Dense(2)       # TWO OUTPUTS
+        Dense(2)
     ])
 
     model.compile(optimizer='adam', loss='mse')
-    model.fit(X, Y, epochs=25, batch_size=32, validation_split=0.2)
+    model.fit(X, Y, epochs=20, batch_size=32, validation_split=0.2)
 
     model.save("lstm_energy_model.keras")
 

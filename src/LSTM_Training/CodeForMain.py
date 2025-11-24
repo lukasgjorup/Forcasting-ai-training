@@ -3,9 +3,7 @@ import pandas as pd
 import pickle
 from tensorflow.keras.models import load_model
 
-# -----------------------------
-# CONFIG — CHANGE THESE PATHS
-# -----------------------------
+
 CSV_PATH = "formatted_userOutputData.csv"
 MODEL_PATH = "lstm_energy_model.keras"
 SCALER_PATH = "scalers.pkl"
@@ -17,7 +15,7 @@ def detect_first_household(csv_path):
     return house_id
 
 
-HOUSE_ID = HOUSE_ID = detect_first_household(CSV_PATH)
+HOUSE_ID  = detect_first_household(CSV_PATH)
 
 TIMESTEPS = 24
 FUTURE_STEPS = 12
